@@ -1,0 +1,189 @@
+---
+title: "432 project"
+output: html_document
+date: "2023-03-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+df <- read.csv("home_insurance.csv", header=T, na.strings=c("","NA"))
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+POL_STATUS is the response variable of our classification problem. We first delete all missing POL_STATUS.
+
+```{r}
+sum(is.na(df$POL_STATUS))
+```
+```{r}
+df2<-df %>% drop_na(POL_STATUS)
+```
+
+
+```{r}
+unique(df2$POL_STATUS)
+```
+Delete unknown observation
+```{r}
+df3 <- df2[df2$POL_STATUS != "Unknown", ]
+```
+
+For regression problem
+```{r}
+summary(df3$MTA_APRP)
+```
+```{r}
+sum(is.na(df3$MTA_APRP))
+```
+
+Delete the missing value of our response variable MTA_APRP for regression problem
+```{r}
+install.packages("data.table")
+library(data.table)
+df4<-data.table(df3 %>% drop_na(MTA_APRP))
+```
+
+
+Delete columns with too many missing values
+```{r}
+df5<-df4[,-c("P1_PT_EMP_STATUS","CLERICAL","CAMPAIGN_DESC")]
+```
+
+Let column PAYMENT_FREQUENCY NA=0
+```{r}
+df5$PAYMENT_FREQUENCY[is.na(df5$PAYMENT_FREQUENCY)] <- 0
+df5$PAYMENT_FREQUENCY<-as.factor(df5$PAYMENT_FREQUENCY)
+```
+
+At that time, only QUOTE_DATE, MTA_DATE, RISK_RATED_AREA_B, RISK_RATED_AREA_C have missing values.
+
+For RISK_RATED_AREA_B and RISK_RATED_AREA_C, both of which has small missing values:
+```{r}
+#replace NA with median
+#Risk rate area B
+mean_B <- median(df5$RISK_RATED_AREA_B, na.rm=TRUE)
+df5$RISK_RATED_AREA_B <- replace_na(df5$RISK_RATED_AREA_B,mean_B)
+#Risk rate area C
+mean_C <- median(df5$RISK_RATED_AREA_C, na.rm=TRUE)
+df5$RISK_RATED_AREA_C <- replace_na(df5$RISK_RATED_AREA_C,mean_C)
+```
+
+Since QUOTE_DATE and  MTA_DATE have a large number of missing values, we will not include these two variables in our models.
+
+Finally we change the type of some variables so that it is easier for us to do EDA.
+```{r}
+df5$SUM_INSURED_BUILDINGS <-as.factor(df5$SUM_INSURED_BUILDINGS)
+df5$LISTED <-as.factor(df5$LISTED)
+df5$PAYING_GUESTS <-as.factor(df5$PAYING_GUESTS)
+```
+
+Save the origin data
+```{r}
+
+```
+
+
+EDA part
+
+```{r}
+df5=data.table(df5)
+total <- nrow(df5)
+status_groups <- df5[, .(count=.N, percent=round((.N/total)*100, 2)), by = POL_STATUS]
+status_groups <- status_groups[order(count, decreasing = TRUE)]
+status_groups
+pieLabels <- paste(status_groups$POL_STATUS,' ', status_groups$percent, '%')
+library(plotrix)
+install.packages("plotrix", version = "3.7-7")
+pie(status_groups$count,labels=pieLabels,explode=0.1, radius=0.8,height=0.1, col=rainbow(length(status_groups$POL_STATUS)),
+  	main="Pie Chart of Policy Status ")
+```
+
+
+
+```{r}
+status_groups[POL_STATUS != 'Lapsed', POL_STATUS:= "Non Resiliated"]
+status_groups[POL_STATUS == 'Lapsed', POL_STATUS:= "Resiliated"]
+status_groups <- status_groups[, .(count=sum(count), percent = round((.N*100)/sum(count), 2)), by = POL_STATUS]
+status_groups[,percent := round((count*100)/sum(count), 2)]
+status_groups <- status_groups[order(count, decreasing = TRUE)]
+status_groups
+pieLabels <- paste(status_groups$POL_STATUS,' ', status_groups$percent, '%')
+pie <- pie(status_groups$percent,labels=pieLabels,explode=0.1, radius=0.8,height=0.1, col=rainbow(length(status_groups$POL_STATUS)),
+  	main="Pie Chart of Resiliation")
+```
+
+```{r}
+df5$Resiliated[df5$POL_STATUS == 'Lapsed'] <- 1
+df5$Resiliated[df5$POL_STATUS != 'Lapsed'] <- 0
+table(df5$Resiliated)
+```
+```{r}
+df6=df5
+```
+
+
+Find the employment ststus of each policy holder
+```{r}
+status_client <- df5[!is.na(P1_EMP_STATUS), .(count=.N), by = P1_EMP_STATUS]
+status_client <- status_client[order(count, decreasing = TRUE)]
+status_client$percent <- status_client$count / sum(status_client$count) * 100
+```
+
+R represents retired. E represents employed. S represents student. H represents house person.U represents unemployed. N represents not available.
+There are about 11 employment status. The Retired people form the overwhelmingly majority. The Employees and Students come at a very distant second and third respectively.
+```{r}
+ggplot(data = status_client, aes(x = P1_EMP_STATUS, y = count)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  geom_text(aes(label = paste0(round(percent, 1), "%"), y = count), vjust = -0.5) +
+  theme_minimal() +
+  labs(x = "Employment Status", y = "Count", title = "Count of Clients by Employment Status")
+```
+R represents retired. E represents employed. S represents student. H represents house person.U represents unemployed. N represents not available.
+There are about 11 employment status. The Retired people form the overwhelmingly majority(76.5%). The Employees(19.5%) and Students(2.1%) come at second and third respectively.
+
+```{r}
+month_order <- c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+day_order <- c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+df5$quotemonth_n <- month(as.POSIXlt(df5$QUOTE_DATE, format="%m/%d/%Y"))
+df5$covermonth_n <- month(as.POSIXlt(df5$COVER_START, format="%d/%m/%Y"))
+#Name the columns
+quotesmonthDF <- data.frame(month_n = df5$quotemonth_n )
+coversmonthDF <- data.frame(month_n = df5$covermonth_n)
+#head(quotesmonthDF, 2)
+#Avoid the null values and make the group by each month to get the monthly total
+quotesmonthgroup <- data.table(quotesmonthDF)
+quotesmonthgroup <-quotesmonthgroup[month_n <= 12]
+quotesmonthgroup <-quotesmonthgroup[(order(month_n)), .(count=.N), by=month_n]
+
+coversmonthgroup <- data.table(coversmonthDF)
+coversmonthgroup <-coversmonthgroup[month_n <= 12]
+coversmonthgroup <-coversmonthgroup[(order(month_n)), .(count=.N), by=month_n]
+#Add the name of the month
+
+quotesmonthgroup$month_s <- month_order[quotesmonthgroup$month_n ]
+coversmonthgroup$month_s <- month_order[coversmonthgroup$month_n ]
+head(quotesmonthgroup, 12)
+head(coversmonthgroup, 12)
+
+
+
+df5$quotemonth_s <- month_order[df5$quotemonth_n ]
+df5$covermonth_s <- month_order[df5$covermonth_n ]
+
+barplot(quotesmonthgroup)
+barplot(coversmonthgroup)
+```
+
+
+
+
+
+
