@@ -24,9 +24,14 @@ na_cols
 ```
 Delete columns with too many missing values and inmeaningful
 ```{r}
-columns_to_exclude <- c("P1_PT_EMP_STATUS", "CLERICAL", "CAMPAIGN_DESC", "UNSPEC_HRP_PREM", "Police", "P1_SEX", "SUBSIDENCE", "HP1_ADDON_PRE_REN", "HP1_ADDON_POST_REN", "HP2_ADDON_PRE_REN", "HP2_ADDON_POST_REN", "HP3_ADDON_PRE_REN", "HP3_ADDON_POST_REN", "GARDEN_ADDON_PRE_REN", "GARDEN_ADDON_POST_REN", "i")
+columns_to_exclude <- c("P1_PT_EMP_STATUS", "CLERICAL", "CAMPAIGN_DESC", "UNSPEC_HRP_PREM", "Police",
+                        "P1_SEX", "SUBSIDENCE", "HP1_ADDON_PRE_REN", "HP1_ADDON_POST_REN",
+                        "HP2_ADDON_PRE_REN", "HP2_ADDON_POST_REN", "HP3_ADDON_PRE_REN", 
+                        "HP3_ADDON_POST_REN",
+                        "GARDEN_ADDON_PRE_REN", "GARDEN_ADDON_POST_REN", "i","QUOTE_DATE")
 df <- df[, !names(df) %in% columns_to_exclude]
 ```
+
 POL_STATUS is the response variable of our classification problem. Our response variable MTA_APRP for regression problem. We drop all the missing value of these two variables.
 ```{r}
 df<-df %>% drop_na(POL_STATUS)
@@ -52,32 +57,133 @@ birthday_year <- year(as.POSIXlt(df$P1_DOB, format="%d/%m/%Y"))
 cover_year <- year(as.POSIXlt(df$COVER_START, format="%d/%m/%Y"))
 df$client_age <- cover_year-birthday_year
 ```
+
 Calculate the policy duration
 ```{r}
-
+na_counts <- colSums(is.na(df))
+print(na_counts)
+```
+```{r}
+unique(df$POL_STATUS)
+```
+Delete "Unknown" observation in POL_STATUS
+```{r}
+df <- df[df$POL_STATUS != "Unknown", ]
 ```
 
-
-
-
-
-
+To calculate the policy duration, first we delete the observation whose POL_STATUS is not "Live" and MTA_DATE is NA
 ```{r}
-str(df)
+df$POL_STATUS<-as.character(df$POL_STATUS)
+df <- subset(df, !(POL_STATUS != "Live" & is.na(MTA_DATE)))
+```
+
+Calculate the duration
+```{r}
+df$duration <- NA
+cover_start_date <- as.Date(df$COVER_START, format = "%d/%m/%Y")
+
+for (i in 1:nrow(df)) {
+  # If status is Live
+  if (df$POL_STATUS[i] == "Live") {
+    # duration=2012/7/1- cover start date
+    fixed_end_date <- as.Date("1/7/2012", format = "%d/%m/%Y")
+    df$duration[i] <- (as.numeric(fixed_end_date - cover_start_date[i])) / 365
+  } else {
+    # If status is not Live, duration=MTA_date - cover start date
+    MTA_date <- as.Date(df$MTA_DATE[i], format = "%d/%m/%Y")
+    df$duration[i] <- (as.numeric(MTA_date - cover_start_date[i]))/365
+  }
+}
+
+df <- df[df$duration != 0, ]
+```
+
+Delete time-related variable
+```{r}
+columns_to_exclude <- c("MTA_DATE", "COVER_START", "P1_DOB")
+df <- df[, !names(df) %in% columns_to_exclude]
 ```
 
 Let column PAYMENT_FREQUENCY NA=0
 ```{r}
-df5$PAYMENT_FREQUENCY[is.na(df5$PAYMENT_FREQUENCY)] <- 0
-df5$PAYMENT_FREQUENCY<-as.factor(df5$PAYMENT_FREQUENCY)
+df$PAYMENT_FREQUENCY[is.na(df$PAYMENT_FREQUENCY)] <- 0
+df$PAYMENT_FREQUENCY<-as.factor(df$PAYMENT_FREQUENCY)
 ```
 
-Finally we change the type of some variables so that it is easier for us to do EDA.
+Finally we change the type of character variables so that it is easier for us to do EDA.
 ```{r}
-df5$SUM_INSURED_BUILDINGS <-as.factor(df5$SUM_INSURED_BUILDINGS)
-df5$LISTED <-as.factor(df5$LISTED)
-df5$PAYING_GUESTS <-as.factor(df5$PAYING_GUESTS)
+columns_to_exclude <- c("MTA_DATE", "COVER_START", "P1_DOB")
+df <- df[, !names(df) %in% columns_to_exclude]
+
+char_vars <- names(df)[sapply(df, is.character)]
+unique_list <- lapply(df[char_vars], unique)
+unique_list<-head(unique_list, -1)
+unique_list
+```
+Delete character variables that only have single value(eg: all "Y" and zero "N")
+```{r}
+one_value_subsets <- Filter(function(x) length(x) == 1, unique_list)
+one_value_subsets
+columns_to_exclude <- c("MTA_FLAG", "BUILDINGS_COVER",   "CONTENTS_COVER","AD_CONTENTS","AD_BUILDINGS","MTA_FLAG")
+df <- df[, !names(df) %in% columns_to_exclude]
 ```
 
+```{r}
+# get variable names that are character type and have exactly two unique values
+vars <- names(df)[sapply(df, function(x) is.character(x) & length(unique(x)) == 2)]
+
+# convert selected variables to factor type
+df[vars] <- lapply(df[vars], as.factor)
+```
+
+
+```{r}
+df$Resiliated[df$POL_STATUS == 'Lapsed'] <- 1
+df$Resiliated[df$POL_STATUS != 'Lapsed'] <- 0
+columns_to_exclude <- c("POL_STATUS")
+df <- df[, !names(df) %in% columns_to_exclude]
+str(df)
+```
+
+
+```{r}
+df$emp_status <- ifelse(df$P1_EMP_STATUS %in% c("E", "R", "S"), "Employed",
+                        ifelse(df$P1_EMP_STATUS %in% c("U", "N", "A"), "Unemployed",
+                               ifelse(df$P1_EMP_STATUS %in% c("H", "F", "V", "I", "C"), "Other", "Unknown")))
+
+df$emp_status <- factor(df$emp_status, levels = c("Employed", "Unemployed", "Other"))
+
+
+df$employment_status <- ifelse(df$P1_EMP_STATUS %in% c("E", "R", "S"), "Employed",
+                               ifelse(df$P1_EMP_STATUS %in% c("U", "N", "A"), "Unemployed",
+                                      "Other"))
+
+df$employment_status <- factor(df$employment_status, levels = c("Employed", "Unemployed", "Other"))
+
+
+
+df$OCC_STATUS <- factor(df$OCC_STATUS, levels = c("PH", "UN", "HH"))
+df$PAYMENT_METHOD <- factor(df$PAYMENT_METHOD, levels = c("PureDD", "NonDD", "DD-Other"))
+df$OCC_STATUS <- factor(df$OCC_STATUS, levels = c("PH", "UN", "HH"))
+df$PAYMENT_METHOD <- factor(df$PAYMENT_METHOD, levels = c("PureDD", "NonDD", "DD-Other"))
+```
+
+
+EDA
+```{r}
+cor_matrix <- cor(df[, sapply(df, is.numeric)])
+
+# 计算与MTA_APRP的相关系数
+cor_with_MTA_APRP <- cor_matrix[, "MTA_APRP"]
+
+# 绘制相关系数图
+plot_cor_with_MTA_APRP <- ggplot(data = data.frame(x = names(cor_with_MTA_APRP), y = cor_with_MTA_APRP),
+                                aes(x = x, y = y)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.5) +
+  labs(title = "Correlation with MTA_APRP", x = "Variable", y = "Correlation")
+
+print(plot_cor_with_MTA_APRP)
+
+```
 
 
