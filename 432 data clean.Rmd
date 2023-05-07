@@ -1,0 +1,83 @@
+---
+title: "432 data clean"
+output: pdf_document
+date: "2023-05-07"
+---
+
+```{r}
+df <- read.csv("home_insurance.csv", header=T, na.strings=c("","NA"))
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+POL_STATUS is the response variable of our classification problem. We first delete all missing POL_STATUS.
+
+```{r}
+na_counts <- colSums(is.na(df))
+print(na_counts)
+na_cols <- names(na_counts[na_counts > 30000])
+na_cols
+```
+Delete columns with too many missing values and inmeaningful
+```{r}
+columns_to_exclude <- c("P1_PT_EMP_STATUS", "CLERICAL", "CAMPAIGN_DESC", "UNSPEC_HRP_PREM", "Police", "P1_SEX", "SUBSIDENCE", "HP1_ADDON_PRE_REN", "HP1_ADDON_POST_REN", "HP2_ADDON_PRE_REN", "HP2_ADDON_POST_REN", "HP3_ADDON_PRE_REN", "HP3_ADDON_POST_REN", "GARDEN_ADDON_PRE_REN", "GARDEN_ADDON_POST_REN", "i")
+df <- df[, !names(df) %in% columns_to_exclude]
+```
+POL_STATUS is the response variable of our classification problem. Our response variable MTA_APRP for regression problem. We drop all the missing value of these two variables.
+```{r}
+df<-df %>% drop_na(POL_STATUS)
+df<-df %>% drop_na(MTA_APRP)
+```
+
+For the RISK_RATED_AREA_B and RISK_RATED_AREA_C, we delete their missing values.
+```{r}
+df<-df %>% drop_na(RISK_RATED_AREA_B)
+df<-df %>% drop_na(RISK_RATED_AREA_C)
+```
+
+Let column PAYMENT_FREQUENCY NA=0
+```{r}
+df$PAYMENT_FREQUENCY[is.na(df$PAYMENT_FREQUENCY)] <- 0
+df$PAYMENT_FREQUENCY<-as.factor(df$PAYMENT_FREQUENCY)
+```
+
+Calculate the client age
+```{r}
+library(lubridate)
+birthday_year <- year(as.POSIXlt(df$P1_DOB, format="%d/%m/%Y"))
+cover_year <- year(as.POSIXlt(df$COVER_START, format="%d/%m/%Y"))
+df$client_age <- cover_year-birthday_year
+```
+Calculate the policy duration
+```{r}
+
+```
+
+
+
+
+
+
+```{r}
+str(df)
+```
+
+Let column PAYMENT_FREQUENCY NA=0
+```{r}
+df5$PAYMENT_FREQUENCY[is.na(df5$PAYMENT_FREQUENCY)] <- 0
+df5$PAYMENT_FREQUENCY<-as.factor(df5$PAYMENT_FREQUENCY)
+```
+
+Finally we change the type of some variables so that it is easier for us to do EDA.
+```{r}
+df5$SUM_INSURED_BUILDINGS <-as.factor(df5$SUM_INSURED_BUILDINGS)
+df5$LISTED <-as.factor(df5$LISTED)
+df5$PAYING_GUESTS <-as.factor(df5$PAYING_GUESTS)
+```
+
+
+
